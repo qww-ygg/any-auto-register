@@ -196,6 +196,7 @@ const TAB_ITEMS = [
           { key: 'cfworker_custom_auth', label: '站点密码', secret: true },
           { key: 'cfworker_subdomain', label: '固定子域名', placeholder: 'mail / pool-a' },
           { key: 'cfworker_random_subdomain', label: '随机子域名', type: 'boolean' },
+          { key: 'cfworker_random_name_subdomain', label: '随机姓名子域名', type: 'boolean' },
           { key: 'cfworker_fingerprint', label: 'Fingerprint', placeholder: '6703363b...' },
         ],
       },
@@ -1350,6 +1351,7 @@ export default function Settings() {
       data.cfworker_domains = parseStoredDomainList(data.cfworker_domains)
       data.cfworker_enabled_domains = parseStoredDomainList(data.cfworker_enabled_domains)
       data.cfworker_random_subdomain = parseBooleanConfigValue(data.cfworker_random_subdomain)
+      data.cfworker_random_name_subdomain = parseBooleanConfigValue(data.cfworker_random_name_subdomain)
       form.setFieldsValue(data)
     })
   }, [form])
@@ -1373,6 +1375,7 @@ export default function Settings() {
         values.cfworker_domain = ''
       }
       values.cfworker_random_subdomain = parseBooleanConfigValue(values.cfworker_random_subdomain)
+      values.cfworker_random_name_subdomain = parseBooleanConfigValue(values.cfworker_random_name_subdomain)
 
       await apiFetch('/config', { method: 'PUT', body: JSON.stringify({ data: values }) })
       form.setFieldsValue({
@@ -1380,6 +1383,7 @@ export default function Settings() {
         cfworker_enabled_domains: enabledDomains,
         cfworker_domain: domains.length > 0 ? '' : values.cfworker_domain,
         cfworker_random_subdomain: values.cfworker_random_subdomain,
+        cfworker_random_name_subdomain: values.cfworker_random_name_subdomain,
       })
       message.success('保存成功')
       setSaved(true)
