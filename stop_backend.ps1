@@ -13,7 +13,7 @@ if ($FullStop -ne 0) {
 }
 $ports = $ports | Where-Object { $_ -gt 0 } | Select-Object -Unique
 
-Write-Host "[INFO] 准备停止端口: $($ports -join ', ')"
+Write-Host "[INFO] Ports to stop: $($ports -join ', ')"
 
 function Get-ProcessIdsByPorts {
     param([int[]]$TargetPorts)
@@ -64,40 +64,40 @@ function Stop-ProcessTreeSafe {
         return $true
     }
 
-    Write-Host "[INFO] 尝试优雅停止 PID=$ProcessId"
+    Write-Host "[INFO] Trying graceful stop for PID=$ProcessId"
     try {
         & taskkill.exe /PID $ProcessId /T *> $null
     } catch {
-        Write-Warning "taskkill 优雅停止返回异常: $($_.Exception.Message)"
+        Write-Warning "taskkill graceful stop returned an error: $($_.Exception.Message)"
     }
     if (Wait-ProcessExit -ProcessId $ProcessId -TimeoutSeconds 6) {
-        Write-Host "[OK] 已停止 PID=$ProcessId"
+        Write-Host "[OK] Stopped PID=$ProcessId"
         return $true
     }
 
-    Write-Warning "PID=$ProcessId 未在预期时间退出，改为强制停止"
+    Write-Warning "PID=$ProcessId did not exit in time, switching to force stop"
     try {
         & taskkill.exe /PID $ProcessId /T /F *> $null
     } catch {
-        Write-Warning "taskkill 强制停止返回异常: $($_.Exception.Message)"
+        Write-Warning "taskkill force stop returned an error: $($_.Exception.Message)"
     }
     if (Wait-ProcessExit -ProcessId $ProcessId -TimeoutSeconds 6) {
-        Write-Host "[OK] 已强制停止 PID=$ProcessId"
+        Write-Host "[OK] Force stopped PID=$ProcessId"
         return $true
     }
 
-    Write-Warning "taskkill 未能完全停止 PID=$ProcessId，尝试使用 Stop-Process -Force"
+    Write-Warning "taskkill could not fully stop PID=$ProcessId, trying Stop-Process -Force"
     try {
         Stop-Process -Id $ProcessId -Force -ErrorAction Stop
     } catch {
-        Write-Warning "Stop-Process -Force 失败: $($_.Exception.Message)"
+        Write-Warning "Stop-Process -Force failed: $($_.Exception.Message)"
     }
     if (Wait-ProcessExit -ProcessId $ProcessId -TimeoutSeconds 6) {
-        Write-Host "[OK] 已通过 Stop-Process 强制停止 PID=$ProcessId"
+        Write-Host "[OK] Stop-Process force stopped PID=$ProcessId"
         return $true
     }
 
-    Write-Warning "PID=$ProcessId 停止失败"
+    Write-Warning "Failed to stop PID=$ProcessId"
     return $false
 }
 
@@ -110,7 +110,7 @@ $extraPids = Get-ProcessIdsByNames -Names $extraNames
 $targets = @($connections + $extraPids) | Where-Object { $_ } | Select-Object -Unique
 
 if (-not $targets) {
-    Write-Host "[INFO] 未发现需要停止的进程"
+    Write-Host "[INFO] No matching processes found"
     exit 0
 }
 
@@ -118,8 +118,8 @@ foreach ($procId in $targets) {
     try {
         Stop-ProcessTreeSafe -ProcessId $procId | Out-Null
     } catch {
-        Write-Warning "停止 PID=$procId 失败: $($_.Exception.Message)"
+        Write-Warning "Stopping PID=$procId failed: $($_.Exception.Message)"
     }
 }
 
-Write-Host "[INFO] 停止完成"
+Write-Host "[INFO] Stop completed"
