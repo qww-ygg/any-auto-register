@@ -154,6 +154,60 @@ def _get_config_value(key: str) -> str:
         return ""
 
 
+def _normalize_base_url(value: str | None) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _resolve_cpa_api_url(api_url: str | None = None) -> str:
+    return (
+        _normalize_base_url(api_url)
+        or _normalize_base_url(_get_config_value("cpa_api_url"))
+        or _normalize_base_url(_get_config_value("cliproxyapi_base_url"))
+    )
+
+
+def _resolve_cpa_api_key(api_key: str | None = None) -> tuple[str, bool]:
+    explicit_key = str(api_key or "").strip()
+    if explicit_key:
+        return explicit_key, True
+    return str(_get_config_value("cpa_api_key") or "").strip(), False
+
+
+def _resolve_cpa_retry_key(api_url: str, current_key: str, explicit_key: bool) -> str:
+    if explicit_key:
+        return ""
+
+    cliproxy_url = _normalize_base_url(_get_config_value("cliproxyapi_base_url"))
+    retry_key = str(_get_config_value("cliproxyapi_management_key") or "").strip()
+    if not cliproxy_url or _normalize_base_url(api_url) != cliproxy_url:
+        return ""
+    if not retry_key or retry_key == str(current_key or "").strip():
+        return ""
+    return retry_key
+
+
+def _post_cpa_auth_file(upload_url: str, headers: dict[str, str], file_content: bytes, filename: str):
+    mime = CurlMime()
+    try:
+        mime.addpart(
+            name="file",
+            data=file_content,
+            filename=filename,
+            content_type="application/json",
+        )
+        return cffi_requests.post(
+            upload_url,
+            multipart=mime,
+            headers=headers,
+            proxies=None,
+            verify=False,
+            timeout=30,
+            impersonate="chrome110",
+        )
+    finally:
+        mime.close()
+
+
 def generate_token_json(account) -> dict:
     """
     生成 CPA 格式的 Token JSON。
@@ -200,14 +254,12 @@ def upload_to_cpa(
 ) -> Tuple[bool, str]:
     """上传单个账号到 CPA 管理平台（不走代理）。
     api_url / api_key 为空时自动从 ConfigStore 读取。"""
-    if not api_url:
-        api_url = _get_config_value("cpa_api_url")
-    if not api_key:
-        api_key = _get_config_value("cpa_api_key")
+    api_url = _resolve_cpa_api_url(api_url)
+    api_key, explicit_key = _resolve_cpa_api_key(api_key)
     if not api_url:
         return False, "CPA API URL 未配置"
 
-    upload_url = f"{api_url.rstrip('/')}/v0/management/auth-files"
+    upload_url = f"{api_url}/v0/management/auth-files"
 
     filename = f"{token_data['email']}.json"
     file_content = json.dumps(token_data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -216,25 +268,14 @@ def upload_to_cpa(
         "Authorization": f"Bearer {api_key or ''}",
     }
 
-    mime = None
     try:
-        mime = CurlMime()
-        mime.addpart(
-            name="file",
-            data=file_content,
-            filename=filename,
-            content_type="application/json",
-        )
-
-        response = cffi_requests.post(
-            upload_url,
-            multipart=mime,
-            headers=headers,
-            proxies=None,
-            verify=False,
-            timeout=30,
-            impersonate="chrome110",
-        )
+        response = _post_cpa_auth_file(upload_url, headers, file_content, filename)
+        if response.status_code == 401:
+            retry_key = _resolve_cpa_retry_key(api_url, api_key, explicit_key)
+            if retry_key:
+                logger.warning("CPA 鉴权失败，回退使用 CLIProxyAPI 管理口令重试: %s", api_url)
+                headers = {"Authorization": f"Bearer {retry_key}"}
+                response = _post_cpa_auth_file(upload_url, headers, file_content, filename)
 
         if response.status_code in (200, 201):
             return True, "上传成功"
@@ -251,9 +292,6 @@ def upload_to_cpa(
     except Exception as e:
         logger.error(f"CPA 上传异常: {e}")
         return False, f"上传异常: {str(e)}"
-    finally:
-        if mime:
-            mime.close()
 
 
 def upload_to_team_manager(
